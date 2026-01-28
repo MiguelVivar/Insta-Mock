@@ -1,0 +1,38 @@
+{
+  "users": [
+    {
+      "id": "1",
+      "name": "Miguel Vivar",
+      "email": "miguel@example.com",
+      "role": "admin"
+    },
+    {
+      "id": "2",
+      "name": "Ana García",
+      "email": "ana@example.com",
+      "role": "user"
+    }
+  ],
+  "posts": [
+    {
+      "id": "1",
+      "title": "Getting Started with Insta-Mock",
+      "content": "Tu Backend listo en lo que tardas en parpadear.",
+      "authorId": "1"
+    },
+    {
+      "id": "2",
+      "title": "Dynamic APIs Made Simple",
+      "content": "Generate CRUD endpoints instantly from JSON.",
+      "authorId": "2"
+    }
+  ],
+  "comments": [
+    {
+      "id": "1",
+      "postId": "1",
+      "text": "This is amazing!",
+      "userId": "2"
+    }
+  ]
+}
