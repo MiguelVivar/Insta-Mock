@@ -3,40 +3,48 @@ package tui
 
 import (
 	"fmt"
-	"strings"
 	"time"
 
-	"github.com/charmbracelet/bubbles/viewport"
+	"github.com/charmbracelet/bubbles/table"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
 
 var (
-	// Colors
+	// Base styles
+	baseStyle = lipgloss.NewStyle().
+			BorderStyle(lipgloss.RoundedBorder()).
+			BorderForeground(lipgloss.Color("240"))
+
 	titleStyle = lipgloss.NewStyle().
 			Bold(true).
 			Foreground(lipgloss.Color("51")).
-			Background(lipgloss.Color("236")).
 			Padding(0, 1)
 
-	methodStyles = map[string]lipgloss.Style{
-		"GET":    lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("42")),  // Green
-		"POST":   lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("214")), // Orange
-		"PUT":    lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("39")),  // Blue
-		"PATCH":  lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("141")), // Purple
-		"DELETE": lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("196")), // Red
+	statsStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("244")).
+			Padding(0, 1)
+
+	helpStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("241")).
+			Padding(1, 0)
+
+	// Method colors
+	methodColors = map[string]lipgloss.Color{
+		"GET":    lipgloss.Color("42"),  // Green
+		"POST":   lipgloss.Color("214"), // Orange
+		"PUT":    lipgloss.Color("39"),  // Blue
+		"PATCH":  lipgloss.Color("141"), // Purple
+		"DELETE": lipgloss.Color("196"), // Red
 	}
 
-	statusStyles = map[int]lipgloss.Style{
-		2: lipgloss.NewStyle().Foreground(lipgloss.Color("42")),  // 2xx Green
-		3: lipgloss.NewStyle().Foreground(lipgloss.Color("214")), // 3xx Yellow
-		4: lipgloss.NewStyle().Foreground(lipgloss.Color("196")), // 4xx Red
-		5: lipgloss.NewStyle().Foreground(lipgloss.Color("196")), // 5xx Red
+	// Status colors
+	statusColors = map[int]lipgloss.Color{
+		2: lipgloss.Color("42"),  // 2xx Green
+		3: lipgloss.Color("214"), // 3xx Yellow
+		4: lipgloss.Color("196"), // 4xx Red
+		5: lipgloss.Color("196"), // 5xx Red
 	}
-
-	infoStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("244"))
-	dimStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
-	borderStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("236"))
 )
 
 // RequestLog represents a single logged request.
@@ -54,26 +62,59 @@ type Stats struct {
 	GetCount      int
 	PostCount     int
 	PutCount      int
+	PatchCount    int
 	DeleteCount   int
 	ErrorCount    int
 }
 
 // Model is the Bubbletea model for the dashboard.
 type Model struct {
-	viewport viewport.Model
-	logs     []RequestLog
+	table    table.Model
+	rows     []table.Row
 	stats    Stats
 	port     string
 	width    int
 	height   int
-	ready    bool
+	quitting bool
 }
 
 // NewModel creates a new dashboard model.
 func NewModel(port string) Model {
+	columns := []table.Column{
+		{Title: "Time", Width: 10},
+		{Title: "Method", Width: 8},
+		{Title: "Path", Width: 30},
+		{Title: "Status", Width: 8},
+		{Title: "Latency", Width: 10},
+	}
+
+	t := table.New(
+		table.WithColumns(columns),
+		table.WithRows([]table.Row{}),
+		table.WithFocused(true),
+		table.WithHeight(15),
+	)
+
+	// Table styling
+	s := table.DefaultStyles()
+	s.Header = s.Header.
+		BorderStyle(lipgloss.NormalBorder()).
+		BorderForeground(lipgloss.Color("240")).
+		BorderBottom(true).
+		Bold(true).
+		Foreground(lipgloss.Color("229"))
+	s.Selected = s.Selected.
+		Foreground(lipgloss.Color("229")).
+		Background(lipgloss.Color("57")).
+		Bold(false)
+	s.Cell = s.Cell.Padding(0, 1)
+
+	t.SetStyles(s)
+
 	return Model{
-		logs: make([]RequestLog, 0),
-		port: port,
+		table: t,
+		rows:  make([]table.Row, 0),
+		port:  port,
 	}
 }
 
@@ -89,127 +130,145 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		switch msg.String() {
-		case "q", "ctrl+c":
+		case "q", "ctrl+c", "esc":
+			m.quitting = true
 			return m, tea.Quit
 		case "c":
-			m.logs = make([]RequestLog, 0)
+			// Clear logs
+			m.rows = make([]table.Row, 0)
+			m.table.SetRows(m.rows)
 			m.stats = Stats{}
 		}
 
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
-		if !m.ready {
-			m.viewport = viewport.New(msg.Width, msg.Height-8)
-			m.ready = true
-		} else {
-			m.viewport.Width = msg.Width
-			m.viewport.Height = msg.Height - 8
+		// Adjust table height to fit window
+		tableHeight := msg.Height - 10
+		if tableHeight < 5 {
+			tableHeight = 5
 		}
+		m.table.SetHeight(tableHeight)
+		m.table.SetWidth(msg.Width - 4)
 
 	case RequestLog:
-		m.logs = append(m.logs, msg)
+		// Update stats
 		m.stats.TotalRequests++
 		switch msg.Method {
 		case "GET":
 			m.stats.GetCount++
 		case "POST":
 			m.stats.PostCount++
-		case "PUT", "PATCH":
+		case "PUT":
 			m.stats.PutCount++
+		case "PATCH":
+			m.stats.PatchCount++
 		case "DELETE":
 			m.stats.DeleteCount++
 		}
 		if msg.StatusCode >= 400 {
 			m.stats.ErrorCount++
 		}
-		m.viewport.SetContent(m.renderLogs())
-		m.viewport.GotoBottom()
+
+		// Create styled row
+		row := m.createRow(msg)
+		m.rows = append(m.rows, row)
+
+		// Keep only last 100 rows to prevent memory issues
+		if len(m.rows) > 100 {
+			m.rows = m.rows[len(m.rows)-100:]
+		}
+
+		m.table.SetRows(m.rows)
+		// Auto-scroll to bottom
+		m.table.GotoBottom()
 	}
 
-	m.viewport, cmd = m.viewport.Update(msg)
+	m.table, cmd = m.table.Update(msg)
 	return m, cmd
+}
+
+// createRow creates a styled table row from a request log.
+func (m Model) createRow(log RequestLog) table.Row {
+	// Format time
+	timeStr := log.Time.Format("15:04:05")
+
+	// Style method with color
+	methodStyle := lipgloss.NewStyle()
+	if color, ok := methodColors[log.Method]; ok {
+		methodStyle = methodStyle.Foreground(color).Bold(true)
+	}
+	method := methodStyle.Render(log.Method)
+
+	// Style status with color
+	statusCategory := log.StatusCode / 100
+	statusStyle := lipgloss.NewStyle()
+	if color, ok := statusColors[statusCategory]; ok {
+		statusStyle = statusStyle.Foreground(color)
+	}
+	status := statusStyle.Render(fmt.Sprintf("%d", log.StatusCode))
+
+	// Format latency
+	latency := log.Latency.Round(time.Microsecond).String()
+
+	return table.Row{timeStr, method, log.Path, status, latency}
 }
 
 // View renders the dashboard.
 func (m Model) View() string {
-	if !m.ready {
-		return "Initializing..."
+	if m.quitting {
+		return "👋 Goodbye!\n"
 	}
-
-	var b strings.Builder
 
 	// Header
 	header := titleStyle.Render("🚀 Insta-Mock Dashboard")
-	b.WriteString(header)
-	b.WriteString(infoStyle.Render(fmt.Sprintf("  http://localhost:%s", m.port)))
-	b.WriteString("\n")
-	b.WriteString(borderStyle.Render(strings.Repeat("─", m.width)))
-	b.WriteString("\n")
+	serverInfo := statsStyle.Render(fmt.Sprintf("http://localhost:%s", m.port))
 
 	// Stats bar
-	stats := fmt.Sprintf(
-		"  📊 Total: %s  │  GET: %s  POST: %s  PUT: %s  DEL: %s  │  Errors: %s",
-		lipgloss.NewStyle().Bold(true).Render(fmt.Sprintf("%d", m.stats.TotalRequests)),
-		methodStyles["GET"].Render(fmt.Sprintf("%d", m.stats.GetCount)),
-		methodStyles["POST"].Render(fmt.Sprintf("%d", m.stats.PostCount)),
-		methodStyles["PUT"].Render(fmt.Sprintf("%d", m.stats.PutCount)),
-		methodStyles["DELETE"].Render(fmt.Sprintf("%d", m.stats.DeleteCount)),
-		statusStyles[4].Render(fmt.Sprintf("%d", m.stats.ErrorCount)),
+	statsBar := m.renderStats()
+
+	// Table
+	tableView := baseStyle.Render(m.table.View())
+
+	// Help
+	help := helpStyle.Render("↑/↓: scroll • c: clear • q: quit")
+
+	return fmt.Sprintf(
+		"%s  %s\n\n%s\n\n%s\n\n%s",
+		header,
+		serverInfo,
+		statsBar,
+		tableView,
+		help,
 	)
-	b.WriteString(stats)
-	b.WriteString("\n")
-	b.WriteString(borderStyle.Render(strings.Repeat("─", m.width)))
-	b.WriteString("\n")
-
-	// Logs viewport
-	b.WriteString(m.viewport.View())
-	b.WriteString("\n")
-
-	// Footer
-	b.WriteString(borderStyle.Render(strings.Repeat("─", m.width)))
-	b.WriteString("\n")
-	b.WriteString(dimStyle.Render("  q: quit  │  c: clear logs  │  ↑/↓: scroll"))
-
-	return b.String()
 }
 
-// renderLogs formats all logs for display.
-func (m Model) renderLogs() string {
-	var b strings.Builder
+// renderStats renders the stats bar.
+func (m Model) renderStats() string {
+	total := lipgloss.NewStyle().Bold(true).Render(fmt.Sprintf("%d", m.stats.TotalRequests))
 
-	for _, log := range m.logs {
-		// Time
-		timeStr := dimStyle.Render(log.Time.Format("15:04:05"))
+	get := lipgloss.NewStyle().Foreground(methodColors["GET"]).Render(fmt.Sprintf("%d", m.stats.GetCount))
+	post := lipgloss.NewStyle().Foreground(methodColors["POST"]).Render(fmt.Sprintf("%d", m.stats.PostCount))
+	put := lipgloss.NewStyle().Foreground(methodColors["PUT"]).Render(fmt.Sprintf("%d", m.stats.PutCount))
+	patch := lipgloss.NewStyle().Foreground(methodColors["PATCH"]).Render(fmt.Sprintf("%d", m.stats.PatchCount))
+	del := lipgloss.NewStyle().Foreground(methodColors["DELETE"]).Render(fmt.Sprintf("%d", m.stats.DeleteCount))
 
-		// Method with color
-		methodStyle := methodStyles["GET"]
-		if s, ok := methodStyles[log.Method]; ok {
-			methodStyle = s
-		}
-		method := methodStyle.Render(fmt.Sprintf("%-6s", log.Method))
+	errorStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("196"))
+	errors := errorStyle.Render(fmt.Sprintf("%d", m.stats.ErrorCount))
 
-		// Status with color
-		statusCategory := log.StatusCode / 100
-		statusStyle := statusStyles[statusCategory]
-		if statusStyle.Value() == "" {
-			statusStyle = infoStyle
-		}
-		status := statusStyle.Render(fmt.Sprintf("%d", log.StatusCode))
+	return fmt.Sprintf(
+		"📊 Total: %s  │  GET: %s  POST: %s  PUT: %s  PATCH: %s  DEL: %s  │  ❌ Errors: %s",
+		total, get, post, put, patch, del, errors,
+	)
+}
 
-		// Latency
-		latency := dimStyle.Render(fmt.Sprintf("%6s", log.Latency.Round(time.Millisecond)))
-
-		// Path
-		path := infoStyle.Render(log.Path)
-
-		b.WriteString(fmt.Sprintf("  %s │ %s │ %s │ %s │ %s\n", timeStr, method, status, latency, path))
+// SendLog is a helper to send a log message to the model.
+func SendLog(method, path string, status int, latency time.Duration) tea.Msg {
+	return RequestLog{
+		Time:       time.Now(),
+		Method:     method,
+		Path:       path,
+		StatusCode: status,
+		Latency:    latency,
 	}
-
-	return b.String()
-}
-
-// AddLog adds a new log entry to the dashboard.
-func (m *Model) AddLog(log RequestLog) {
-	m.logs = append(m.logs, log)
 }
