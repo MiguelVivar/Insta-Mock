@@ -6,26 +6,22 @@ Generate instant REST APIs from JSON files with zero configuration.
 
 ## ✨ Features
 
-- 🔥 **Instant CRUD** - GET, POST, PUT, DELETE endpoints auto-generated
-- 📁 **JSON-Powered** - Your data file becomes your API
-- 🔒 **Thread-Safe** - Concurrent request handling built-in
-- 🌐 **CORS Enabled** - Ready for frontend integration
-- 🆔 **Auto UUIDs** - IDs generated automatically for new items
+| Feature               | Description                                  |
+| --------------------- | -------------------------------------------- |
+| 🔥 **Instant CRUD**   | GET, POST, PUT, PATCH, DELETE auto-generated |
+| 📁 **JSON-Powered**   | Your data file becomes your API              |
+| 🧠 **Smart Data Gen** | Generate fake data from field names          |
+| 🔄 **Hot Reload**     | Watch file changes, auto-reload (`--watch`)  |
+| 💥 **Chaos Mode**     | Simulate failures/latency (`--chaos`)        |
+| 🔍 **Query Params**   | Pagination, sorting, filtering, search       |
+| 🌐 **CORS Enabled**   | Ready for frontend integration               |
 
 ---
 
 ## 📦 Installation
 
 ```bash
-go install github.com/MiguelVivar/insta-mock/cmd/imock@latest
-```
-
-Or clone and build:
-
-```bash
-git clone https://github.com/MiguelVivar/insta-mock.git
-cd insta-mock
-go build -o imock ./cmd/imock
+go install github.com/MiguelVivar/insta-mock/cmd/imock@main
 ```
 
 ---
@@ -35,7 +31,6 @@ go build -o imock ./cmd/imock
 ### 1. Create your data file
 
 ```json
-// db.json
 {
   "users": [{ "id": "1", "name": "Miguel", "email": "miguel@example.com" }],
   "posts": [{ "id": "1", "title": "Hello World", "authorId": "1" }]
@@ -48,99 +43,90 @@ go build -o imock ./cmd/imock
 imock serve db.json --port 3000
 ```
 
-### 3. Use your API!
-
-| Method   | Endpoint   | Description     |
-| -------- | ---------- | --------------- |
-| `GET`    | `/users`   | List all users  |
-| `GET`    | `/users/1` | Get user by ID  |
-| `POST`   | `/users`   | Create new user |
-| `PUT`    | `/users/1` | Update user     |
-| `DELETE` | `/users/1` | Delete user     |
-| `GET`    | `/health`  | Health check    |
-
----
-
-## 📖 API Examples
-
-### List all items
+### 3. Advanced options
 
 ```bash
-curl http://localhost:3000/users
-```
+# Generate 10 fake items per resource
+imock serve db.json --count 10
 
-### Get single item
+# Enable hot-reload (auto-reload on file changes)
+imock serve db.json --watch
 
-```bash
-curl http://localhost:3000/users/1
-```
+# Enable chaos mode (random failures/latency)
+imock serve db.json --chaos
 
-### Create item
-
-```bash
-curl -X POST http://localhost:3000/users \
-  -H "Content-Type: application/json" \
-  -d '{"name": "Ana", "email": "ana@example.com"}'
-```
-
-### Update item
-
-```bash
-curl -X PUT http://localhost:3000/users/1 \
-  -H "Content-Type: application/json" \
-  -d '{"name": "Miguel Vivar", "email": "miguel@updated.com"}'
-```
-
-### Delete item
-
-```bash
-curl -X DELETE http://localhost:3000/users/1
+# Combine all features
+imock serve db.json -p 8080 -c 20 -w --chaos
 ```
 
 ---
 
-## 🧑‍💻 Programmatic Usage
+## 📖 API Reference
 
-```go
-package main
+### Endpoints
 
-import (
-    "encoding/json"
-    "os"
-    "github.com/MiguelVivar/insta-mock/internal/server"
-)
+| Method   | Endpoint         | Description                  |
+| -------- | ---------------- | ---------------------------- |
+| `GET`    | `/:resource`     | List all (with query params) |
+| `GET`    | `/:resource/:id` | Get by ID                    |
+| `POST`   | `/:resource`     | Create new item              |
+| `PUT`    | `/:resource/:id` | Replace item                 |
+| `PATCH`  | `/:resource/:id` | Partial update               |
+| `DELETE` | `/:resource/:id` | Delete item                  |
+| `GET`    | `/db`            | Get entire database          |
+| `GET`    | `/health`        | Health check                 |
 
-func main() {
-    // Load JSON data
-    file, _ := os.ReadFile("db.json")
-    var data map[string]interface{}
-    json.Unmarshal(file, &data)
+### Query Parameters
 
-    // Create and start engine
-    engine := server.NewEngine(data)
-    engine.Start(":3000")
-}
+```bash
+# Pagination
+GET /users?_page=1&_limit=10
+
+# Sorting
+GET /users?_sort=name&_order=desc
+
+# Full-text search
+GET /users?q=miguel
+
+# Field filtering
+GET /users?role=admin
+GET /posts?authorId=1
 ```
 
 ---
 
-## 📋 JSON Structure Rules
+## 🧠 Smart Data Generation
 
-| Structure             | Result                        |
-| --------------------- | ----------------------------- |
-| `{"users": [...]}`    | Creates `/users` endpoints    |
-| `{"products": [...]}` | Creates `/products` endpoints |
-| Items without `id`    | UUID auto-generated           |
+Field names are analyzed to generate appropriate fake data:
 
-Each top-level key becomes a REST resource with full CRUD support.
+| Field Pattern        | Generated Data             |
+| -------------------- | -------------------------- |
+| `email`, `correo`    | `ana.garcia@example.com`   |
+| `name`, `nombre`     | `Miguel Rodríguez`         |
+| `phone`, `telefono`  | `+1-555-123-4567`          |
+| `title`, `titulo`    | `Lorem ipsum sentence`     |
+| `price`, `precio`    | `$42.99`                   |
+| `id`, `*_id`         | UUID auto-generated        |
+| `url`, `website`     | `https://example.com/path` |
+| `image`, `avatar`    | Image URL                  |
+| `address`, `street`  | Street address             |
+| `city`, `ciudad`     | City name                  |
+| `company`, `empresa` | Company name               |
 
 ---
 
-## 🛠 Tech Stack
+## 🛠 CLI Reference
 
-- **Server**: [Fiber v2](https://gofiber.io/) - Express-like performance
-- **CLI**: [Cobra](https://github.com/spf13/cobra) + [Viper](https://github.com/spf13/viper)
-- **TUI**: [Bubbletea](https://github.com/charmbracelet/bubbletea) + [Lipgloss](https://github.com/charmbracelet/lipgloss)
+```
+imock serve <json-file> [flags]
+
+Flags:
+  -p, --port string   Port to run the server (default "3000")
+  -c, --count int     Generate N fake items per resource
+  -w, --watch         Watch file for changes (hot-reload)
+      --chaos         Enable chaos mode (random failures)
+  -h, --help          Help for serve
+```
 
 ---
 
